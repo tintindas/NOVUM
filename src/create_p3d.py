@@ -12,31 +12,48 @@ from lib.config import load_config, parse_args
 from lib.createCuboidMesh import create_cuboid_mesh
 from lib.MeshMemoryMap import MeshConverter
 from lib.CalculatePointDirection import cal_point_weight, direction_calculator
-mesh_len = {'aeroplane': 8, 'bicycle': 6, 'boat': 6, 'bottle': 8, 'bus': 6, 'car': 10, 'chair': 10, 'diningtable': 6, 'motorbike': 5, 'sofa': 6, 'train': 4, 'tvmonitor': 4}
+
+mesh_len = {
+    "aeroplane": 8,
+    "bicycle": 6,
+    "boat": 6,
+    "bottle": 8,
+    "bus": 6,
+    "car": 10,
+    "chair": 10,
+    "diningtable": 6,
+    "motorbike": 5,
+    "sofa": 6,
+    "train": 4,
+    "tvmonitor": 4,
+}
 
 args = parse_args()
 config = load_config(args, load_default_config=True, log_info=False)
 
 
-# generate 3D cuboids 
+# generate 3D cuboids
 create_cuboid_mesh(
-    input_path=Path(config.dataset.paths.root, "PASCAL3D+_release1.1/CAD"), 
+    input_path=Path(config.dataset.paths.root, "PASCAL3D+_release1.1/CAD"),
     output_path=Path(config.dataset.paths.root, config.dataset.paths.mesh),
     number_vertices=1000,
-    linear_coverage=0.99
+    linear_coverage=0.99,
 )
+
 
 # generate 3D annotations
 def generate_3D_annotations(config, base_path, occlusion=""):
     error_case = list()
     for cate in config.dataset.classes:
         cate_ = cate + occlusion
-        mesh_path = str(Path(config.dataset.paths.root, config.dataset.paths.mesh, cate, "01.off"))
+        mesh_path = str(
+            Path(config.dataset.paths.root, config.dataset.paths.mesh, cate, "01.off")
+        )
         destination_path = str(Path(base_path, config.dataset.paths.annot, cate_))
         save_list_path = str(Path(base_path, config.dataset.paths.img_list, cate_))
-        source_path = str(Path(base_path, 'annotations', cate_))
-        source_list_path = str(Path(base_path, 'lists', cate_))
-        image_dir = str(Path(base_path, 'images', cate_))
+        source_path = str(Path(base_path, "annotations", cate_))
+        source_list_path = str(Path(base_path, "lists", cate_))
+        image_dir = str(Path(base_path, "images", cate_))
 
         os.makedirs(destination_path, exist_ok=True)
 
@@ -49,28 +66,34 @@ def generate_3D_annotations(config, base_path, occlusion=""):
             direction_dicts.append(direction_calculator(*t))
 
         for fname in fl_list:
-            if not config.overwrite and os.path.exists(os.path.join(destination_path, fname)):
+            if not config.overwrite and os.path.exists(
+                os.path.join(destination_path, fname)
+            ):
                 continue
             try:
                 annos = np.load(os.path.join(source_path, fname), allow_pickle=True)
                 annos = dict(annos)
-                annos['cad_index'] = 1
+                annos["cad_index"] = 1
                 kps, vis = manager.get_one(annos)
-                idx = annos['cad_index'] - 1
+                idx = annos["cad_index"] - 1
 
-                weights = cal_point_weight(direction_dicts[idx], manager.loader[idx][0], annos)
+                weights = cal_point_weight(
+                    direction_dicts[idx], manager.loader[idx][0], annos
+                )
 
-                annos['kp_weights'] = np.abs(weights)
-                annos['cropped_kp_list'] = kps
-                annos['visible'] = vis
+                annos["kp_weights"] = np.abs(weights)
+                annos["cropped_kp_list"] = kps
+                annos["visible"] = vis
                 np.savez(os.path.join(destination_path, fname), **annos)
             except:
-                error_case.append(cate_ + ' ' + fname)
+                error_case.append(cate_ + " " + fname)
 
-        file_name_pendix = '.JPEG'
+        file_name_pendix = ".JPEG"
         os.makedirs(save_list_path, exist_ok=True)
-        annos_list = [t.split('.')[0] + file_name_pendix for t in os.listdir(destination_path)]
-        imgs_list = [t.split('.')[0] + file_name_pendix for t in os.listdir(image_dir)]
+        annos_list = [
+            t.split(".")[0] + file_name_pendix for t in os.listdir(destination_path)
+        ]
+        imgs_list = [t.split(".")[0] + file_name_pendix for t in os.listdir(image_dir)]
         inter_list_set = set(annos_list).intersection(set(imgs_list))
         list_list = os.listdir(source_list_path)
         out_names = []
@@ -78,14 +101,14 @@ def generate_3D_annotations(config, base_path, occlusion=""):
             fnames = open(os.path.join(source_list_path, list_name)).readlines()
             fnames = [t.strip() for t in fnames]
             fnames_useful = list(set(fnames).intersection(inter_list_set))
-            fnames_useful = [t + '\n' for t in fnames_useful]
+            fnames_useful = [t + "\n" for t in fnames_useful]
             out_names += fnames_useful
 
         out_names = list(set(out_names))
-        out_string = ''.join(out_names)
-        with open(os.path.join(save_list_path, 'mesh01.txt'), 'w') as fl:
+        out_string = "".join(out_names)
+        with open(os.path.join(save_list_path, "mesh01.txt"), "w") as fl:
             fl.write(out_string)
-    print('\nErrors At: ', error_case)
+    print("\nErrors At: ", error_case)
 
 
 project_dir = Path(__file__).resolve().parent
@@ -96,28 +119,88 @@ mesh_para_names = config.dataset.required_annotations
 dataset_root = root / "PASCAL3D+_release1.1"
 occluded_dataset_root = root / "OccludedPASCAL3D"
 
-# download raw dataset 
+# download raw dataset
 if not dataset_root.exists():
     print("Downloading Pascal3D+ dataset (1/2)")
-    os.system("cd " + str(root) + " && " + "wget ftp://cs.stanford.edu/cs/cvgl/PASCAL3D+_release1.1.zip" + " && " + "unzip PASCAL3D+_release1.1.zip" + " && " + "rm PASCAL3D+_release1.1.zip" + " && " + f"cd " + str(project_dir))
+    os.system(
+        "cd "
+        + str(root)
+        + " && "
+        + "wget ftp://cs.stanford.edu/cs/cvgl/PASCAL3D+_release1.1.zip"
+        + " && "
+        + "unzip PASCAL3D+_release1.1.zip"
+        + " && "
+        + "rm PASCAL3D+_release1.1.zip"
+        + " && "
+        + f"cd "
+        + str(project_dir)
+    )
 
-# download subsets 
+# download subsets
 if not (dataset_root / "Image_subsets").exists():
     print("Downloading Pascal3D+ dataset (2/2)")
-    gdown.download("https://docs.google.com/uc?export=download&id=1NsoVXW8ngQCqTHHFSW8YYsCim9EjiXS7", dataset_root / "Image_subsets.zip", quiet=False)
-    os.system("unzip " + str(dataset_root / "Image_subsets.zip") + " -d " + str(dataset_root) + " && " + "rm " + str(dataset_root / "Image_subsets.zip"))
+    gdown.download(
+        "https://docs.google.com/uc?export=download&id=1NsoVXW8ngQCqTHHFSW8YYsCim9EjiXS7",
+        str(dataset_root / "Image_subsets.zip"),
+        quiet=False,
+    )
+    os.system(
+        "unzip "
+        + str(dataset_root / "Image_subsets.zip")
+        + " -d "
+        + str(dataset_root)
+        + " && "
+        + "rm "
+        + str(dataset_root / "Image_subsets.zip")
+    )
 
 # download occluded dataset
 if not occluded_dataset_root.exists():
     print("Downloading Occluded Pascal3D+ dataset (1/1)")
     occluded_dataset_root.mkdir(parents=True, exist_ok=True)
-    gdown.download("https://docs.google.com/uc?export=download&id=1X-xwyypLTm9vr-boLYPIPhGxcYaPHSNF", str(occluded_dataset_root / "OccludedPASCAL3D_FGL1_BGL1.zip"), quiet=False)
-    gdown.download("https://docs.google.com/uc?export=download&id=1dNP8YE3RJ9Pzr_jQ11O6f6eYgYnq9ROp", str(occluded_dataset_root / "OccludedPASCAL3D_FGL2_BGL2.zip"), quiet=False)
-    gdown.download("https://docs.google.com/uc?export=download&id=1GsHCyAYnqcJsAgiih1vKpDQxzF3ouFxS", str(occluded_dataset_root / "OccludedPASCAL3D_FGL3_BGL3.zip"), quiet=False)
-    os.system("unzip " + str(occluded_dataset_root / "OccludedPASCAL3D_FGL1_BGL1.zip") + " -d " + str(occluded_dataset_root) + " && " + "rm " + str(occluded_dataset_root / "OccludedPASCAL3D_FGL1_BGL1.zip"))
-    os.system("unzip " + str(occluded_dataset_root / "OccludedPASCAL3D_FGL2_BGL2.zip") + " -d " + str(occluded_dataset_root) + " && " + "rm " + str(occluded_dataset_root / "OccludedPASCAL3D_FGL2_BGL2.zip"))
-    os.system("unzip " + str(occluded_dataset_root / "OccludedPASCAL3D_FGL3_BGL3.zip") + " -d " + str(occluded_dataset_root) + " && " + "rm " + str(occluded_dataset_root / "OccludedPASCAL3D_FGL3_BGL3.zip"))
-    
+    gdown.download(
+        "https://docs.google.com/uc?export=download&id=1X-xwyypLTm9vr-boLYPIPhGxcYaPHSNF",
+        str(occluded_dataset_root / "OccludedPASCAL3D_FGL1_BGL1.zip"),
+        quiet=False,
+    )
+    gdown.download(
+        "https://docs.google.com/uc?export=download&id=1dNP8YE3RJ9Pzr_jQ11O6f6eYgYnq9ROp",
+        str(occluded_dataset_root / "OccludedPASCAL3D_FGL2_BGL2.zip"),
+        quiet=False,
+    )
+    gdown.download(
+        "https://docs.google.com/uc?export=download&id=1GsHCyAYnqcJsAgiih1vKpDQxzF3ouFxS",
+        str(occluded_dataset_root / "OccludedPASCAL3D_FGL3_BGL3.zip"),
+        quiet=False,
+    )
+    os.system(
+        "unzip "
+        + str(occluded_dataset_root / "OccludedPASCAL3D_FGL1_BGL1.zip")
+        + " -d "
+        + str(occluded_dataset_root)
+        + " && "
+        + "rm "
+        + str(occluded_dataset_root / "OccludedPASCAL3D_FGL1_BGL1.zip")
+    )
+    os.system(
+        "unzip "
+        + str(occluded_dataset_root / "OccludedPASCAL3D_FGL2_BGL2.zip")
+        + " -d "
+        + str(occluded_dataset_root)
+        + " && "
+        + "rm "
+        + str(occluded_dataset_root / "OccludedPASCAL3D_FGL2_BGL2.zip")
+    )
+    os.system(
+        "unzip "
+        + str(occluded_dataset_root / "OccludedPASCAL3D_FGL3_BGL3.zip")
+        + " -d "
+        + str(occluded_dataset_root)
+        + " && "
+        + "rm "
+        + str(occluded_dataset_root / "OccludedPASCAL3D_FGL3_BGL3.zip")
+    )
+
 
 def get_anno(record, *args, idx=0):
     out = []
@@ -190,9 +273,7 @@ for category in config.dataset.classes:
     for i in range(len(subtype_list)):
         name_list = ""
         for img_name in subtype_images[i]:
-            if not os.path.exists(
-                os.path.join(load_image_path, img_name + ".JPEG")
-            ):
+            if not os.path.exists(os.path.join(load_image_path, img_name + ".JPEG")):
                 continue
             name_list += img_name + ".JPEG\n"
             anno_path = anno_dir / f"{img_name}.mat"
@@ -208,9 +289,9 @@ for category in config.dataset.classes:
             ):
                 continue
             objects = record["objects"]
-            azimuth_coarse = objects[0, 0]["viewpoint"][0, 0]["azimuth_coarse"][
+            azimuth_coarse = objects[0, 0]["viewpoint"][0, 0]["azimuth_coarse"][0, 0][
                 0, 0
-            ][0, 0]
+            ]
             elevation_coarse = objects[0, 0]["viewpoint"][0, 0]["elevation_coarse"][
                 0, 0
             ][0, 0]
@@ -225,9 +306,7 @@ for category in config.dataset.classes:
             img = np.array(Image.open(load_image_path / f"{img_name}.JPEG"))
             box_ori = box_ori.set_boundary(img.shape[0:2])
             w, h = img.shape[1], img.shape[0]
-            img = cv2.resize(
-                img, dsize=(int(w * resize_rate), int(h * resize_rate))
-            )
+            img = cv2.resize(img, dsize=(int(w * resize_rate), int(h * resize_rate)))
             center = (get_anno(record, "principal")[::-1] * resize_rate).astype(int)
             box1 = bbt.box_by_shape(out_shape, center)
             if (
@@ -268,29 +347,23 @@ for category in config.dataset.classes:
                 box_obj=box_in_cropped.numpy(),
                 occ_mask=None,
                 cropped_occ_mask=None,
-                padding=padding
+                padding=padding,
             )
 
             save_parameters = {
                 **save_parameters,
                 **{
                     k: v
-                    for k, v in zip(
-                        mesh_para_names, get_anno(record, *mesh_para_names)
-                    )
+                    for k, v in zip(mesh_para_names, get_anno(record, *mesh_para_names))
                 },
             }
 
-            np.savez(
-                os.path.join(save_annotation_path, img_name), **save_parameters
-            )
+            np.savez(os.path.join(save_annotation_path, img_name), **save_parameters)
             Image.fromarray(img_cropped).save(
                 os.path.join(save_image_path, img_name + ".JPEG")
             )
 
-        with open(
-            os.path.join(save_list_path, subtype_list[i] + ".txt"), "w"
-        ) as fl:
+        with open(os.path.join(save_list_path, subtype_list[i] + ".txt"), "w") as fl:
             fl.write(name_list)
 
     for i, t_ in enumerate(mesh_name_list):
@@ -304,8 +377,8 @@ generate_3D_annotations(config, base_path=train_root)
 # Evaluation
 for occlusion in config.dataset.occlusion_levels:
     save_path_val = Path(
-        config.dataset.paths.root, 
-        config.dataset.paths.eval_ood if occlusion else config.dataset.paths.eval_iid
+        config.dataset.paths.root,
+        config.dataset.paths.eval_ood if occlusion else config.dataset.paths.eval_iid,
     )
     print(f"Creating evaluation dataset (occlusion lvl : {occlusion}): ")
     for category in config.dataset.classes:
@@ -326,10 +399,14 @@ for occlusion in config.dataset.occlusion_levels:
         pkl_dir = dataset_root / "Image_subsets"
         anno_dir = dataset_root / "Annotations" / f"{category}_{DATASET_SUBSET}"
         load_image_path = dataset_root / "Images" / f"{category}_{DATASET_SUBSET}"
-        
+
         if occlusion:
-            load_image_path = occluded_dataset_root / "images" / f"{category}{occlusion}"
-            occ_mask_dir = occluded_dataset_root / "annotations" / f"{category}{occlusion}"
+            load_image_path = (
+                occluded_dataset_root / "images" / f"{category}{occlusion}"
+            )
+            occ_mask_dir = (
+                occluded_dataset_root / "annotations" / f"{category}{occlusion}"
+            )
         else:
             load_image_path = dataset_root / "Images" / f"{category}_{DATASET_SUBSET}"
             occ_mask_dir = None
@@ -343,7 +420,7 @@ for occlusion in config.dataset.occlusion_levels:
         with open(subtype_file_dir, "r") as fh:
             subtype_list = fh.readlines()
         subtype_list = [e.strip() for e in subtype_list if e != "\n"]
-        pkl_path = pkl_dir, f"{category}_{DATASET_SUBSET}_val.pkl"
+        pkl_path = pkl_dir / f"{category}_{DATASET_SUBSET}_val.pkl"
         subtype_images = pickle.load(open(pkl_path, "rb"))
         annotations = [[] for _ in range(len(subtype_list))]
 
@@ -354,7 +431,9 @@ for occlusion in config.dataset.occlusion_levels:
                 if not (load_image_path / f"{img_name}.JPEG").exists():
                     continue
                 if occlusion:
-                    occ_mask = np.load(occ_mask_dir / f"{img_name}.npz", allow_pickle=True)["occluder_mask"]
+                    occ_mask = np.load(
+                        occ_mask_dir / f"{img_name}.npz", allow_pickle=True
+                    )["occluder_mask"]
                 else:
                     occ_mask = None
                 name_list += img_name + ".JPEG\n"
@@ -446,7 +525,7 @@ for occlusion in config.dataset.occlusion_levels:
                     box_obj=box_in_cropped.numpy(),
                     occ_mask=occ_mask,
                     cropped_occ_mask=mask_cropped,
-                    padding=padding
+                    padding=padding,
                 )
 
                 save_parameters = {
@@ -481,13 +560,7 @@ for occlusion in config.dataset.occlusion_levels:
 # generate 3D annotations for test set
 for occlusion in config.dataset.occlusion_levels:
     if occlusion == "":
-        path = Path(
-            config.dataset.paths.root, 
-            config.dataset.paths.eval_iid
-        )
+        path = Path(config.dataset.paths.root, config.dataset.paths.eval_iid)
     else:
-        path = Path(
-            config.dataset.paths.root, 
-            config.dataset.paths.eval_ood
-        )
+        path = Path(config.dataset.paths.root, config.dataset.paths.eval_ood)
     generate_3D_annotations(config, base_path=path, occlusion=occlusion)

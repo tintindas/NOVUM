@@ -13,6 +13,7 @@ net_out_dimension = {
     "resnetext": 256,
 }
 
+
 class ResNetExt(nn.Module):
     def __init__(self, pretrained, nb_classes=12, pose_output_size=126, dropout_p=None):
         super().__init__()
@@ -66,10 +67,21 @@ def resnetext(pretrain):
 
 
 def keypoints_to_pixel_index(keypoints, downsample_rate, original_img_size=(480, 640)):
+    H, W = original_img_size  # height, width
+
+    # Clamp keypoints to valid range
+    keypoints_clamped = keypoints.clone()
+    keypoints_clamped[:, :, 0] = keypoints_clamped[:, :, 0].clamp(
+        0, H - 1
+    )  # y-axis (height)
+    keypoints_clamped[:, :, 1] = keypoints_clamped[:, :, 1].clamp(
+        0, W - 1
+    )  # x-axis (width)
+
     line_size = original_img_size[1] // downsample_rate
     return (
-        keypoints[:, :, 0] // downsample_rate * line_size
-        + keypoints[:, :, 1] // downsample_rate
+        keypoints_clamped[:, :, 0] // downsample_rate * line_size
+        + keypoints_clamped[:, :, 1] // downsample_rate
     )
 
 
@@ -77,6 +89,7 @@ def get_noise_pixel_index(keypoints, max_size, n_samples, obj_mask=None):
     n = keypoints.shape[0]
     # remove the point in keypoints by set probability to 0 otherwise 1 -> mask [n, size] with 0 or 1
     mask = torch.ones((n, max_size), dtype=torch.float32).to(keypoints.device)
+
     mask = mask.scatter(1, keypoints.type(torch.long), 0.0)
     if obj_mask is not None:
         mask *= obj_mask
@@ -104,6 +117,7 @@ class GlobalLocalConverter(nn.Module):
 
         # X:  N, C * local_size0 * local_size1, H * W
         return X
+
 
 def batched_index_select(t, dim, inds):
     dummy = inds.unsqueeze(2).expand(inds.size(0), inds.size(1), t.size(2))

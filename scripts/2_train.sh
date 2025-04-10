@@ -1,3 +1,1 @@
-conda activate novum
-
-python ../src/train.py --config config/default.yaml
+CUDA_LAUNCH_BLOCKING=1 python src/train.py --config config/default.yaml

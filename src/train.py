@@ -24,9 +24,9 @@ dataloader_set = []
 n_list_set = []
 mesh_path_set = []
 
-if "%s" in config.dataset.paths.mesh:
+if config.dataset.paths.mesh:
     for class_ in config.dataset.classes:
-        mesh_path = Path(config.dataset.root, config.dataset.paths.mesh % class_)
+        mesh_path = Path(config.dataset.paths.root, config.dataset.paths.mesh, class_)
         mesh_path_set.append(mesh_path)
         n_list = get_n_list(mesh_path)
         n_list_set.append(n_list[0])
@@ -35,16 +35,15 @@ if "%s" in config.dataset.paths.mesh:
 os.makedirs(config.save_dir, exist_ok=True)
 
 net = NetE2E(
-    net_type=config.training.backbone,
+    net_type=config.model.backbone,
     local_size=local_size,
     output_dimension=config.training.d_feature,
-    reduce_function=None,
-    n_noise_points=config.training.num_noise,
+    n_noise_points=config.model.num_noise,
     pretrain=True,
     noise_on_mask=False,
 )
 net.train()
-if config.model.separate_bank:
+if config.training.separate_bank:
     net = torch.nn.DataParallel(net.cuda(), device_ids=[i for i in range(n_gpus - 1)])
 else:
     net = torch.nn.DataParallel(net.cuda())
@@ -61,34 +60,32 @@ mesh_path = mesh_path_set[0]
 max_n = max(n_list_set)
 fbank = FeatureBank(
     inputSize=config.training.d_feature,
-    outputSize=len(config.dataset.classes) * max_n + config.model.num_noise * config.model.max_group,
+    outputSize=len(config.dataset.classes) * max_n
+    + config.model.num_noise * config.model.max_group,
     num_noise=config.model.num_noise,
     num_pos=len(config.dataset.classes) * max_n,
     momentum=config.model.adj_momentum,
+    nb_classes=len(config.dataset.classes),
 )
 fbank = fbank.cuda()
 
 dataset = Pascal3DPlus(
-    transforms=transforms,
-    rootpath=config.paths.root,
-    mesh_path=mesh_path,
-    anno_path=config.paths.annot,
-    list_path=config.paths.img_list,
-    weighted=True,
-    max_n=max_n,
+    transforms=transforms, max_n=max_n, occlusion="", config=config.dataset
 )
 
 shared_dataloader = DataLoader(
     dataset,
     batch_size=config.training.batch_size,
     shuffle=True,
-    num_workers=config.training.workers,
+    num_workers=config.workers,
 )
 
 criterion = torch.nn.CrossEntropyLoss(reduction="none").cuda()
 
 iter_num = 0
-optim = torch.optim.Adam(net.parameters(), lr=config.training.lr, weight_decay=config.training.weight_decay)
+optim = torch.optim.Adam(
+    net.parameters(), lr=config.training.lr, weight_decay=config.training.weight_decay
+)
 last_device = "cuda:%d" % (n_gpus - 1)
 fbank = fbank.cuda(last_device)
 
@@ -139,7 +136,9 @@ for epoch in trange(config.training.total_epochs):
         img_label = img_label.cuda()
 
         # feature is of shape [batch, -1, d_feature (128 as setted)]
-        features = net.forward(img, keypoint_positions=keypoint)  # , obj_mask=1 - obj_mask)
+        features = net.forward(
+            img, keypoint_positions=keypoint
+        )  # , obj_mask=1 - obj_mask)
 
         # similarity: [n, k, l]
         if config.training.separate_bank:

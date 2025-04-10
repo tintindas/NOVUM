@@ -2,6 +2,7 @@ import BboxTools as bbt
 import torch
 from tqdm import tqdm
 from pathlib import Path
+
 torch.multiprocessing.set_sharing_strategy("file_system")
 import torch.utils.data
 import torchvision.transforms as transforms
@@ -23,6 +24,7 @@ import numpy as np
 from lib.get_n_list import get_n_list
 from lib.helper import display_results, prepare_rendering_for_init, get_object_texture
 from lib.losses import loss_fun, cal_err, cal_rotation_matrix, get_init_pos
+
 torch.cuda.set_device(0)
 f = float
 
@@ -65,8 +67,9 @@ print("Model loaded from " + config.model.ckpt)
 ##########################################################################
 # Load texture objects textures and clutter bank
 fbank = FeatureBank(
-    inputSize=config.model.d_feature, 
-    outputSize=len(config.dataset.classes)*max_n+config.model.num_noise*config.model.max_group, 
+    inputSize=config.model.d_feature,
+    outputSize=len(config.dataset.classes) * max_n
+    + config.model.num_noise * config.model.max_group,
     num_pos=len(config.dataset.classes) * max_n,
     num_noise=config.model.num_noise,
     momentum=config.model.adj_momentum,
@@ -77,6 +80,7 @@ fbank.load_memory(checkpoint["memory"].clone().detach().cpu())
 objects_texture = fbank.features
 clutter_bank = fbank.clutter
 mean_clutter_bank = normalize(torch.mean(clutter_bank, dim=0)).unsqueeze(0).cuda()
+
 ##########################################################################
 # Rendering
 render_image_size = max(config.dataset.image_size) // config.model.down_sample_rate
@@ -98,9 +102,12 @@ raster_settings = RasterizationSettings(
 )
 rasterizer = MeshRasterizer(cameras=cameras, raster_settings=raster_settings)
 
-pre_rendered_samples, pre_rendered_maps = prepare_rendering_for_init(config, objects_texture, n_list_set, rasterizer)
-##########################################################################
-# Inference
+pre_rendered_samples, pre_rendered_maps = prepare_rendering_for_init(
+    config, objects_texture, n_list_set, rasterizer
+)
+
+# ##########################################################################
+# # Inference
 Pascal3D_dataset = Pascal3DPlus(
     config=config.dataset,
     transforms=transforms,
@@ -163,10 +170,10 @@ for j, sample in enumerate(tqdm(Pascal3D_dataloader)):
             ]
             img_cropped = img[
                 ...,
-                object_height[0]
-                * config.model.down_sample_rate : object_height[1]
+                object_height[0] * config.model.down_sample_rate : object_height[1]
                 * config.model.down_sample_rate,
-                object_width[0] * config.model.down_sample_rate : object_width[1] * config.model.down_sample_rate,
+                object_width[0] * config.model.down_sample_rate : object_width[1]
+                * config.model.down_sample_rate,
             ]
 
         # Classification
@@ -178,10 +185,12 @@ for j, sample in enumerate(tqdm(Pascal3D_dataloader)):
         )
         score_per_pixel = score_per_pixel / 2 + 0.5
         scores_val, score_idx = torch.max(score_per_pixel, dim=0)
-        
-        # For loop 
+
+        # For loop
         for cls_idx, cls in enumerate(config.dataset.classes):
-            score_to_keep = (score_idx >= (cls_idx * max_n)) & (score_idx < (cls_idx * max_n + n_list_set[cls_idx]))
+            score_to_keep = (score_idx >= (cls_idx * max_n)) & (
+                score_idx < (cls_idx * max_n + n_list_set[cls_idx])
+            )
             score = torch.sum(scores_val[score_to_keep]) / compare_bank.shape[0]
             scores.append(score.item())
         scores = np.array(scores)
@@ -225,11 +234,21 @@ for j, sample in enumerate(tqdm(Pascal3D_dataloader)):
     optim = torch.optim.Adam(
         params=[C, theta],
         lr=config.inference.render_and_compare.lr,
-        betas=(config.inference.render_and_compare.adam_beta_0, config.inference.render_and_compare.adam_beta_1),
+        betas=(
+            config.inference.render_and_compare.adam_beta_0,
+            config.inference.render_and_compare.adam_beta_1,
+        ),
     )
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optim, gamma=0.2)
 
-    xvert, xface = load_off(str(Path(config.dataset.paths.root, config.dataset.paths.mesh) / config.dataset.classes[label] / "01.off"), to_torch=True)
+    xvert, xface = load_off(
+        str(
+            Path(config.dataset.paths.root, config.dataset.paths.mesh)
+            / config.dataset.classes[label]
+            / "01.off"
+        ),
+        to_torch=True,
+    )
     inter_module = MeshInterpolateModule(
         xvert.cuda(),
         xface.cuda(),
@@ -277,7 +296,7 @@ for j, sample in enumerate(tqdm(Pascal3D_dataloader)):
         error_ = np.pi / 2
     else:
         error_ = cal_err(gd_matrix, pred_matrix)
-    
+
     pose_errors.append(error_)
 
 display_results(class_gds, class_preds, pose_errors, thresholds=[np.pi / 6, np.pi / 18])

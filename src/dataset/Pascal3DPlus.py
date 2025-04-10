@@ -12,25 +12,26 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-class Pascal3DPlus(Dataset):
-    def __init__(self, config, occlusion, transforms, max_n, test=False, enable_cache=True):
 
+class Pascal3DPlus(Dataset):
+    def __init__(
+        self, config, occlusion, transforms, max_n, test=False, enable_cache=True
+    ):
         self.for_test = test
         self.max_n = max_n
         self.transforms = transforms
 
         self.occlusion = occlusion
-        assert self.occlusion in config.occlusion_levels, f"Invalid occlusion level, must be one of {config.occlusion_levels}"
+        assert self.occlusion in config.occlusion_levels, (
+            f"Invalid occlusion level, must be one of {config.occlusion_levels}"
+        )
         if self.for_test:
             root_path = Path(
-                config.paths.root, 
+                config.paths.root,
                 config.paths.eval_ood if self.occlusion else config.paths.eval_iid,
             )
         else:
-            root_path = Path(
-                config.paths.root, 
-                config.paths.train
-            )
+            root_path = Path(config.paths.root, config.paths.training)
         self.weighted = config.weighted
 
         self.image_path = root_path / config.paths.imgs
@@ -44,7 +45,9 @@ class Pascal3DPlus(Dataset):
             for class_ in self.classes:
                 deeper_dir = list_path / class_
                 if not deeper_dir.exists():
-                    warnings.warn(f"Class {class_} not found in {list_path}, skipping it.")
+                    warnings.warn(
+                        f"Class {class_} not found in {list_path}, skipping it."
+                    )
                     continue
                 self.file_list = [
                     os.path.join(class_, l.strip())
@@ -59,7 +62,9 @@ class Pascal3DPlus(Dataset):
                 class_occ = class_ + self.occlusion
                 deeper_dir = list_path / class_occ
                 if not deeper_dir.exists():
-                    warnings.warn(f"Class {class_occ} not found in {list_path}, skipping it.")
+                    warnings.warn(
+                        f"Class {class_occ} not found in {list_path}, skipping it."
+                    )
                     continue
                 self.file_list = [
                     os.path.join(class_occ, l.strip())
@@ -90,7 +95,10 @@ class Pascal3DPlus(Dataset):
             img = Image.open(self.image_path / name_img)
             if img.mode != "RGB":
                 img = img.convert("RGB")
-            annotation_file = np.load(self.annotation_path / (name_img.split(".")[0] + ".npz"), allow_pickle=True)
+            annotation_file = np.load(
+                self.annotation_path / (name_img.split(".")[0] + ".npz"),
+                allow_pickle=True,
+            )
 
             if self.enable_cache:
                 self.cache_anno[name_img] = dict(annotation_file)
