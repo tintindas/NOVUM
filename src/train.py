@@ -13,6 +13,8 @@ from models.FeatureBank import FeatureBank
 from models.KeypointRepresentationNet import NetE2E
 from tqdm import trange
 from lib.config import load_config, parse_args
+from torch.nn import functional as F
+import csv
 
 args = parse_args()
 config = load_config(args, load_default_config=False, log_info=False)
@@ -23,6 +25,7 @@ bank_set = []
 dataloader_set = []
 n_list_set = []
 mesh_path_set = []
+
 
 if config.dataset.paths.mesh:
     for class_ in config.dataset.classes:
@@ -104,9 +107,67 @@ zeros = torch.zeros(
     dtype=torch.float32,
 ).to(last_device)
 
+experiment_name = "manual_ce"
+csv_file = f"{config.save_dir}/training_log_{experiment_name}.csv"
+
+
+def log_training_metrics(
+    iter_num,
+    epoch,
+    loss_main,
+    loss_reg,
+    csv_file="training_log.csv",
+    print_to_console=True,
+):
+    """
+    Logs training metrics to a CSV file with optional console printing.
+
+    Parameters:
+    - iter_num (int): Current iteration number.
+    - epoch (int): Current epoch number.
+    - loss_main (float): Main loss value.
+    - loss_reg (float): Regularization loss value.
+    - csv_file (str): Path to the CSV file.
+    - print_to_console (bool): Whether to also print the log to console.
+    """
+    # Check if file exists to determine if header is needed
+    file_exists = os.path.isfile(csv_file)
+
+    # Get the current timestamp
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Prepare the row
+    row = [timestamp, iter_num, epoch, f"{loss_main:.5f}", f"{loss_reg:.5f}"]
+
+    # Write to CSV
+    with open(csv_file, mode="a", newline="") as file:
+        writer = csv.writer(file)
+
+        # Write header if it's a new file
+        if not file_exists:
+            writer.writerow(["timestamp", "n_iter", "epoch", "loss", "loss_reg"])
+
+        # Write data row
+        writer.writerow(row)
+
+    # Optionally, print to console
+    if print_to_console:
+        print(
+            "timestamp",
+            timestamp,
+            "n_iter",
+            iter_num,
+            "epoch",
+            epoch,
+            "loss",
+            f"{loss_main:.5f}",
+            "loss_reg",
+            f"{loss_reg:.5f}",
+        )
+
 
 def save_checkpoint(state, filename):
-    file = os.path.join(config.training.save_dir, filename)
+    file = os.path.join(config.save_dir, filename)
     torch.save(state, file)
 
 
@@ -174,24 +235,24 @@ for epoch in trange(config.training.total_epochs):
         iskpvisible_float = iskpvisible
         iskpvisible = iskpvisible.type(torch.bool).to(iskpvisible.device)
 
-        # Keypoints loss
-        loss = criterion(
-            (
-                similarity.view(-1, similarity.shape[2])
-                - mask_distance_legal.view(-1, similarity.shape[2])
-            )[
-                iskpvisible.view(-1),
-                :,
-            ],
-            y_idx.view(-1)[iskpvisible.view(-1)],
+        logits = similarity.view(-1, similarity.shape[2]) - mask_distance_legal.view(
+            -1, similarity.shape[2]
         )
+        iskpvisible_flat = iskpvisible.view(-1)
+        logits = logits[iskpvisible_flat, :]
 
-        loss = torch.mean(loss)
+        target = y_idx.view(-1)[iskpvisible_flat]
+
+        log_probs = F.log_softmax(logits, dim=1)  # (N_visible, V)
+        per_example_loss = -log_probs.gather(1, target.unsqueeze(1)).squeeze(
+            1
+        )  # (N_visible,)
+        loss = per_example_loss.mean()
 
         loss_main = loss.item()
         if config.model.num_noise > 0:
-            # The loss of noise
             loss_reg = torch.mean(noise_sim) * 0.1
+            # The loss of noise
             loss += loss_reg
         else:
             loss_reg = torch.zeros(1)
@@ -200,19 +261,13 @@ for epoch in trange(config.training.total_epochs):
         if iter_num % config.training.accumulate == 0:
             optim.step()
             optim.zero_grad()
-            print(
-                "n_iter",
-                iter_num,
-                "epoch",
-                epoch,
-                "loss",
-                "%.5f" % loss_main,
-                "loss_reg",
-                "%.5f" % loss_reg.item(),
+            log_training_metrics(
+                iter_num, epoch, loss_main, loss_reg.item(), csv_file=csv_file
             )
+
         iter_num += 1
 
-    if (epoch + 1) % 40 == 0:
+    if (epoch + 1) % 5 == 0:
         save_checkpoint(
             {
                 "state": net.state_dict(),
@@ -220,5 +275,5 @@ for epoch in trange(config.training.total_epochs):
                 "timestamp": int(datetime.timestamp(datetime.now())),
                 "args": args,
             },
-            "classification_saved_model_%02d.pth" % epoch,
+            f"{experiment_name}_classification_saved_model_{epoch + 1}.pth",
         )
