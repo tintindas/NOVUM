@@ -107,7 +107,7 @@ zeros = torch.zeros(
     dtype=torch.float32,
 ).to(last_device)
 
-experiment_name = "manual_ce"
+experiment_name = "manual_sig_loss"
 csv_file = f"{config.save_dir}/training_log_{experiment_name}.csv"
 
 
@@ -244,12 +244,15 @@ for epoch in trange(config.training.total_epochs):
         target = y_idx.view(-1)[iskpvisible_flat]
 
         log_probs = F.log_softmax(logits, dim=1)  # (N_visible, V)
-        per_example_loss = -log_probs.gather(1, target.unsqueeze(1)).squeeze(
-            1
-        )  # (N_visible,)
-        loss = per_example_loss.mean()
 
+        labels_onehot = torch.zeros_like(log_probs)
+        labels_onehot.scatter_(1, target.unsqueeze(1), 1.0)
+
+        per_example_loss = -torch.sum(log_probs * labels_onehot, dim=1)  # (N_visible,)
+
+        loss = per_example_loss.mean()
         loss_main = loss.item()
+
         if config.model.num_noise > 0:
             loss_reg = torch.mean(noise_sim) * 0.1
             # The loss of noise
