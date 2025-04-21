@@ -15,6 +15,8 @@ from tqdm import trange
 from lib.config import load_config, parse_args
 from torch.nn import functional as F
 import csv
+import torch.distributed as dist
+from siglip.loss import SigLipLoss
 
 args = parse_args()
 config = load_config(args, load_default_config=False, log_info=False)
@@ -47,9 +49,11 @@ net = NetE2E(
 )
 net.train()
 if config.training.separate_bank:
-    net = torch.nn.DataParallel(net.cuda(), device_ids=[i for i in range(n_gpus - 1)])
+    net = torch.nn.paralled.DataParallel(
+        net.cuda(), device_ids=[i for i in range(n_gpus - 1)]
+    )
 else:
-    net = torch.nn.DataParallel(net.cuda())
+    net = torch.nn.parallel.DataParallel(net.cuda())
 
 
 transforms = transforms.Compose(
@@ -83,7 +87,8 @@ shared_dataloader = DataLoader(
     num_workers=config.workers,
 )
 
-criterion = torch.nn.CrossEntropyLoss(reduction="none").cuda()
+
+criterion = SigLipLoss()
 
 iter_num = 0
 optim = torch.optim.Adam(
@@ -107,7 +112,7 @@ zeros = torch.zeros(
     dtype=torch.float32,
 ).to(last_device)
 
-experiment_name = "manual_sig_loss"
+experiment_name = "siglip_loss"
 csv_file = f"{config.save_dir}/training_log_{experiment_name}.csv"
 
 
@@ -189,69 +194,42 @@ for epoch in trange(config.training.total_epochs):
         )
         # obj_mask = sample["obj_mask"]
         index = sample["y_idx"]
+        index = index.cuda()
 
         img = img.cuda()
         keypoint = keypoint.cuda()
         iskpvisible = iskpvisible.cuda()
-        # obj_mask = obj_mask.cuda()
-        img_label = img_label.cuda()
-
-        # feature is of shape [batch, -1, d_feature (128 as setted)]
-        features = net.forward(
-            img, keypoint_positions=keypoint
-        )  # , obj_mask=1 - obj_mask)
-
-        # similarity: [n, k, l]
-        if config.training.separate_bank:
-            similarity, y_idx, noise_sim, label_onehot = fbank(
-                features.to(last_device),
-                index.to(last_device),
-                iskpvisible.to(last_device),
-                img_label.to(last_device),
-            )
-        else:
-            similarity, y_idx, noise_sim, label_onehot = fbank(
-                features,
-                index.cuda(),
-                iskpvisible,
-                img_label,
-            )
-
-        similarity /= config.training.T
-
-        # make near vertice large value for CE, remove effect of near vertices.
-        mask_distance_legal = mask_remove_near(
-            keypoint,
-            thr=config.training.distance_thr,
-            num_neg=config.model.num_noise * config.model.max_group,
-            img_label=img_label,
-            pad_index=pad_index,
-            nb_classes=len(config.dataset.classes),
-            zeros=zeros,
-            dtype_template=similarity,
-            neg_weight=config.training.weight_noise,
-        )
 
         iskpvisible_float = iskpvisible
         iskpvisible = iskpvisible.type(torch.bool).to(iskpvisible.device)
 
-        logits = similarity.view(-1, similarity.shape[2]) - mask_distance_legal.view(
-            -1, similarity.shape[2]
-        )
-        iskpvisible_flat = iskpvisible.view(-1)
-        logits = logits[iskpvisible_flat, :]
+        # obj_mask = obj_mask.cuda()
+        img_label = img_label.cuda()
 
-        target = y_idx.view(-1)[iskpvisible_flat]
+        # feature is of shape [batch, -1, d_feature (128 as setted)]
+        image_features = net.forward(
+            img, keypoint_positions=keypoint
+        )  # , obj_mask=1 - obj_mask)
 
-        log_probs = F.log_softmax(logits, dim=1)  # (N_visible, V)
+        bank_features = fbank.features
 
-        labels_onehot = torch.zeros_like(log_probs)
-        labels_onehot.scatter_(1, target.unsqueeze(1), 1.0)
+        # flatten and mask out invisible vertices
+        B, K, D = image_features.shape
+        flat_img_feats = image_features.view(B * K, D)
+        flat_mask = iskpvisible.view(-1)
+        image_feats = flat_img_feats[flat_mask]
 
-        per_example_loss = -torch.sum(log_probs * labels_onehot, dim=1)  # (N_visible,)
+        # get matching features from FeatureBank
+        flat_ids = index.view(-1)
+        target_ids = flat_ids[flat_mask]
+        bank_feats = bank_features[target_ids]
 
-        loss = per_example_loss.mean()
+        logit_scale = 1.0
+        logit_bias = None
+        loss = criterion(bank_feats, image_feats, target_ids, logit_scale, logit_bias)
+
         loss_main = loss.item()
+        fbank.forward_siglip(image_features, index, iskpvisible_float, img_label)
 
         if config.model.num_noise > 0:
             loss_reg = torch.mean(noise_sim) * 0.1
