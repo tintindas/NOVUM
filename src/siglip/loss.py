@@ -82,7 +82,11 @@ class SigLipLoss(nn.Module):
     def forward(
         self, bank_feats, image_feats, target_ids, logit_scale, logit_bias=None
     ):
-        loss = self._loss(bank_feats, image_feats, target_ids, logit_scale, logit_bias)
+        z_bank_feats = F.normalize(bank_feats, p=2, dim=1)
+        z_image_feats = F.normalize(image_feats, p=2, dim=1)
+        loss = self._loss(
+            z_bank_feats, z_image_feats, target_ids, logit_scale, logit_bias
+        )
 
         if self.world_size > 1:
             right_rank = (self.rank + 1) % self.world_size

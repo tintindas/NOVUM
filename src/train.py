@@ -13,6 +13,7 @@ from models.FeatureBank import FeatureBank
 from models.KeypointRepresentationNet import NetE2E
 from tqdm import trange
 from lib.config import load_config, parse_args
+import torch.nn as nn
 from torch.nn import functional as F
 import csv
 import torch.distributed as dist
@@ -87,12 +88,18 @@ shared_dataloader = DataLoader(
     num_workers=config.workers,
 )
 
+t_prime = nn.Parameter(torch.log(torch.tensor(10.0)))
+b = nn.Parameter(torch.tensor(-10.0))
+logit_scale = torch.exp(t_prime)
+logit_bias = b
 
 criterion = SigLipLoss()
 
 iter_num = 0
 optim = torch.optim.Adam(
-    net.parameters(), lr=config.training.lr, weight_decay=config.training.weight_decay
+    list(net.parameters() + [t_prime, b]),
+    lr=config.training.lr,
+    weight_decay=config.training.weight_decay,
 )
 last_device = "cuda:%d" % (n_gpus - 1)
 fbank = fbank.cuda(last_device)
@@ -126,14 +133,6 @@ def log_training_metrics(
 ):
     """
     Logs training metrics to a CSV file with optional console printing.
-
-    Parameters:
-    - iter_num (int): Current iteration number.
-    - epoch (int): Current epoch number.
-    - loss_main (float): Main loss value.
-    - loss_reg (float): Regularization loss value.
-    - csv_file (str): Path to the CSV file.
-    - print_to_console (bool): Whether to also print the log to console.
     """
     # Check if file exists to determine if header is needed
     file_exists = os.path.isfile(csv_file)
@@ -224,8 +223,6 @@ for epoch in trange(config.training.total_epochs):
         target_ids = flat_ids[flat_mask]
         bank_feats = bank_features[target_ids]
 
-        logit_scale = 1.0
-        logit_bias = None
         loss = criterion(bank_feats, image_feats, target_ids, logit_scale, logit_bias)
 
         loss_main = loss.item()
