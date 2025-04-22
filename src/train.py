@@ -17,6 +17,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 import csv
 import torch.distributed as dist
+from torch.utils.data.distributed import DistributedSampler
 from siglip.loss import SigLipLoss
 
 args = parse_args()
@@ -28,6 +29,13 @@ bank_set = []
 dataloader_set = []
 n_list_set = []
 mesh_path_set = []
+
+local_rank = int(os.environ["LOCAL_RANK"])
+torch.cuda.set_device(local_rank)
+
+dist.init_process_group(backend="nccl")
+rank = dist.get_rank()
+world_size = dist.get_world_size()
 
 
 if config.dataset.paths.mesh:
@@ -49,12 +57,18 @@ net = NetE2E(
     noise_on_mask=False,
 )
 net.train()
+
 if config.training.separate_bank:
     net = torch.nn.paralled.DataParallel(
         net.cuda(), device_ids=[i for i in range(n_gpus - 1)]
     )
 else:
-    net = torch.nn.parallel.DataParallel(net.cuda())
+    net = torch.nn.parallel.DistributedDataParallel(
+        net.cuda(local_rank),
+        device_ids=[local_rank],
+        output_device=local_rank,
+        find_unused_parameters=False,
+    )
 
 
 transforms = transforms.Compose(
@@ -81,17 +95,19 @@ dataset = Pascal3DPlus(
     transforms=transforms, max_n=max_n, occlusion="", config=config.dataset
 )
 
+sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True)
 shared_dataloader = DataLoader(
     dataset,
     batch_size=config.training.batch_size,
-    shuffle=True,
+    sampler=sampler,
     num_workers=config.workers,
+    pin_memory=True,
 )
 
 t_prime = nn.Parameter(torch.log(torch.tensor(10.0)))
 b = nn.Parameter(torch.tensor(-10.0))
 
-criterion = SigLipLoss()
+criterion = SigLipLoss(rank=rank, world_size=world_size)
 
 iter_num = 0
 optim = torch.optim.Adam(
@@ -175,6 +191,7 @@ def save_checkpoint(state, filename):
 
 print("Start Training!")
 for epoch in trange(config.training.total_epochs):
+    sampler.set_epoch(epoch)
     if (epoch - 1) % config.training.update_lr_epoch_n == 0:
         lr = config.training.lr * config.training.update_lr_
         for param_group in optim.param_groups:
@@ -236,13 +253,15 @@ for epoch in trange(config.training.total_epochs):
         else:
             loss_reg = torch.zeros(1)
 
+        dist.all_reduce(loss, op=dist.ReduceOp.SUM)
         loss.backward()
         if iter_num % config.training.accumulate == 0:
             optim.step()
             optim.zero_grad()
-            log_training_metrics(
-                iter_num, epoch, loss_main, loss_reg.item(), csv_file=csv_file
-            )
+            if rank == 0:
+                log_training_metrics(
+                    iter_num, epoch, loss_main, loss_reg.item(), csv_file=csv_file
+                )
 
         iter_num += 1
 
