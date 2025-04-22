@@ -51,12 +51,12 @@ dataset:
 
 model:
   backbone: resnetext
-  num_noise: 2
+  num_noise: 0
   max_group: 512
   adj_momentum: 0.9
   d_feature: 128
   local_size: 1
-  ckpt: "/home/upamanyu/m_project/NOVUM/results/classification_saved_model_19.pth" # TODO: change this 
+  ckpt: "/home/upamanyu/m_project/NOVUM/results/siglip_loss_single_norm_classification_saved_model_20.pth" # TODO: change this 
   down_sample_rate: 8
 
 training:

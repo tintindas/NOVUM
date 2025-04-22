@@ -63,11 +63,13 @@ class SigLipLoss(nn.Module):
         self.rank = rank
         self.world_size = world_size
 
-    def _loss(self, bank_feats, image_feats, target_ids, logit_scale, logit_bias):
+    def _loss(self, image_feats, bank_feats, target_ids, logit_scale, logit_bias):
         # get logits
         # bank_feats: [N, D]
         # image_feats: [N, D]
-        logits = logit_scale * (bank_feats @ image_feats.T)  # [N,N]
+        N = bank_feats.shape[0]
+
+        logits = logit_scale * (image_feats @ bank_feats.T)  # [N,N]
         if logit_bias is not None:
             logits += logit_bias
 
@@ -75,35 +77,35 @@ class SigLipLoss(nn.Module):
         eq_mask = target_ids.unsqueeze(1) == target_ids.unsqueeze(0)  # [N, N]
         labels = torch.where(eq_mask, 1.0, -1.0).to(logits.device, logits.dtype)
 
-        loss = -F.logsigmoid(labels * logits).mean()
+        loss = -F.logsigmoid(labels * logits).sum() / (N * N)
 
         return loss
 
     def forward(
-        self, bank_feats, image_feats, target_ids, logit_scale, logit_bias=None
+        self, image_feats, bank_feats, target_ids, logit_scale, logit_bias=None
     ):
         z_bank_feats = F.normalize(bank_feats, p=2, dim=1)
         z_image_feats = F.normalize(image_feats, p=2, dim=1)
         loss = self._loss(
-            z_bank_feats, z_image_feats, target_ids, logit_scale, logit_bias
+            z_image_feats, z_bank_feats, target_ids, logit_scale, logit_bias
         )
 
         if self.world_size > 1:
             right_rank = (self.rank + 1) % self.world_size
             left_rank = (self.rank - 1 + self.world_size) % self.world_size
 
-            image_feats_to_right = image_feats
+            z_bank_feats_to_right = z_bank_feats
             for i in range(self.world_size - 1):
-                image_feats_from_left = neighbour_exchange_with_grad(
-                    left_rank, right_rank, image_feats_to_right
+                z_bank_feats_from_left = neighbour_exchange_with_grad(
+                    left_rank, right_rank, z_bank_feats_to_right
                 )
 
                 loss += self._loss(
-                    bank_feats,
-                    image_feats_from_left,
+                    z_image_feats,
+                    z_bank_feats_from_left,
                     logit_scale,
                     logit_bias,
                 )
-                image_feats_to_right = image_feats_from_left
+                z_bank_feats_to_right = z_bank_feats_from_left
 
         return loss

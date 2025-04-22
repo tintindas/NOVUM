@@ -90,14 +90,12 @@ shared_dataloader = DataLoader(
 
 t_prime = nn.Parameter(torch.log(torch.tensor(10.0)))
 b = nn.Parameter(torch.tensor(-10.0))
-logit_scale = torch.exp(t_prime)
-logit_bias = b
 
 criterion = SigLipLoss()
 
 iter_num = 0
 optim = torch.optim.Adam(
-    list(net.parameters() + [t_prime, b]),
+    list(net.parameters()) + [t_prime, b],
     lr=config.training.lr,
     weight_decay=config.training.weight_decay,
 )
@@ -119,7 +117,7 @@ zeros = torch.zeros(
     dtype=torch.float32,
 ).to(last_device)
 
-experiment_name = "siglip_loss"
+experiment_name = "siglip_loss_single_lr_x5"
 csv_file = f"{config.save_dir}/training_log_{experiment_name}.csv"
 
 
@@ -223,10 +221,13 @@ for epoch in trange(config.training.total_epochs):
         target_ids = flat_ids[flat_mask]
         bank_feats = bank_features[target_ids]
 
-        loss = criterion(bank_feats, image_feats, target_ids, logit_scale, logit_bias)
+        logit_scale = torch.exp(t_prime)
+        logit_bias = b
+        loss = criterion(image_feats, bank_feats, target_ids, logit_scale, logit_bias)
+
+        fbank.forward_siglip(image_features, index, iskpvisible_float, img_label)
 
         loss_main = loss.item()
-        fbank.forward_siglip(image_features, index, iskpvisible_float, img_label)
 
         if config.model.num_noise > 0:
             loss_reg = torch.mean(noise_sim) * 0.1
