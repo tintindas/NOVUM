@@ -136,7 +136,7 @@ zeros = torch.zeros(
     dtype=torch.float32,
 ).to(rank)
 
-experiment_name = "siglip_loss_multi_single"
+experiment_name = "siglip_loss_single_idex"
 csv_file = f"{config.save_dir}/training_log_{experiment_name}.csv"
 
 
