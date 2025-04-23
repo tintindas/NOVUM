@@ -32,9 +32,11 @@ mesh_path_set = []
 
 local_rank = int(os.environ["LOCAL_RANK"])
 torch.cuda.set_device(local_rank)
+print(f"{local_rank=}")
 
 dist.init_process_group(backend="nccl")
 rank = dist.get_rank()
+print(f"{rank=}")
 world_size = dist.get_world_size()
 
 
@@ -116,7 +118,8 @@ optim = torch.optim.Adam(
     weight_decay=config.training.weight_decay,
 )
 last_device = "cuda:%d" % (n_gpus - 1)
-fbank = fbank.cuda(last_device)
+# fbank = fbank.cuda(last_device)
+fbank = fbank.cuda(rank)
 
 pad_index = []
 for i in range(len(config.dataset.classes)):
@@ -131,9 +134,9 @@ zeros = torch.zeros(
     max_n,
     max_n * len(config.dataset.classes),
     dtype=torch.float32,
-).to(last_device)
+).to(rank)
 
-experiment_name = "siglip_loss_single_lr_x5"
+experiment_name = "siglip_loss_multi_single"
 csv_file = f"{config.save_dir}/training_log_{experiment_name}.csv"
 
 
