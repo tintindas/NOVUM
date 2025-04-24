@@ -89,6 +89,7 @@ fbank = FeatureBank(
     num_pos=len(config.dataset.classes) * max_n,
     momentum=config.model.adj_momentum,
     nb_classes=len(config.dataset.classes),
+    device=device,
 )
 fbank = fbank.to(device)
 

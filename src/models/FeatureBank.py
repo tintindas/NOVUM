@@ -64,7 +64,9 @@ def mask_remove_near(
                     i,
                     :,
                     img_label[i] * tem.shape[1] : (img_label[i] + 1) * tem.shape[1],
-                ] = tem[i] * eps
+                ] = (
+                    tem[i] * eps
+                )
             # for i in range(12):
             # ret[:, :, tem.shape[1] * i + n_list[i] : tem.shape[1] * (i+1)] = eps
             zeros[:, :, pad_index.view(-1)] = eps
@@ -103,6 +105,7 @@ class FeatureBank(nn.Module):
         max_groups=-1,
         num_noise=-1,
         nb_classes=12,
+        device=None,
     ):
         super().__init__()
         self.nLem = outputSize
@@ -112,7 +115,11 @@ class FeatureBank(nn.Module):
         self.nb_classes = nb_classes
         self.single_feature_dim = int(num_pos / self.nb_classes)
 
-        self.memory = torch.rand(outputSize, inputSize).mul_(2 * stdv).add_(-stdv)
+        self.memory = (
+            torch.rand(outputSize, inputSize).mul_(2 * stdv).add_(-stdv)
+            if not device
+            else torch.rand(outputSize, inputSize).mul_(2 * stdv).add_(-stdv).to(device)
+        )
         self.memory.requires_grad = False
 
         self.lru = 0
