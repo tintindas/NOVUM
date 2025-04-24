@@ -225,6 +225,9 @@ for epoch in trange(config.training.total_epochs):
         flat_mask = iskpvisible.view(-1)
         image_feats = flat_img_feats[flat_mask]
 
+        if image_feats.numel() == 0:
+            continue
+
         # get matching features from FeatureBank
         flat_ids = index.view(-1)
         target_ids = flat_ids[flat_mask].to(device)
