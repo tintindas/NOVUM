@@ -216,6 +216,7 @@ for epoch in trange(config.training.total_epochs):
         )  # , obj_mask=1 - obj_mask)
 
         bank_features = fbank.features
+        bank_features.to(device)
 
         # flatten and mask out invisible vertices
         B, K, D = image_features.shape
@@ -225,7 +226,7 @@ for epoch in trange(config.training.total_epochs):
 
         # get matching features from FeatureBank
         flat_ids = index.view(-1)
-        target_ids = flat_ids[flat_mask]
+        target_ids = flat_ids[flat_mask].to(device)
         bank_feats = bank_features[target_ids]
 
         logit_scale = torch.exp(t_prime)
