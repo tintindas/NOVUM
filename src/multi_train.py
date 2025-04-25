@@ -223,21 +223,17 @@ for epoch in trange(config.training.total_epochs):
         B, K, D = image_features.shape
         flat_img_feats = image_features.view(B * K, D)
         flat_mask = iskpvisible.view(-1)
-        image_feats = flat_img_feats[flat_mask]
-
-        if image_feats.numel() == 0:
-            continue
+        valid_mask = flat_mask.to(torch.float32)
 
         # get matching features from FeatureBank
         flat_ids = index.view(-1)
-        target_ids = flat_ids[flat_mask].to(device)
-        bank_feats = bank_features[target_ids]
+        bank_feats = bank_features[flat_ids]
 
         logit_scale = torch.exp(t_prime)
         logit_bias = b
-        print(f"before loss forward on rank {dist.get_rank()}")
-        loss = criterion(image_feats, bank_feats, target_ids, logit_scale, logit_bias)
-        print(f"after loss forward on rank {dist.get_rank()}")
+        loss = criterion(
+            flat_img_feats, bank_feats, flat_ids, logit_scale, logit_bias, flat_mask
+        )
 
         fbank.forward_siglip(image_features, index, iskpvisible_float, img_label)
 
@@ -250,13 +246,7 @@ for epoch in trange(config.training.total_epochs):
         else:
             loss_reg = torch.zeros(1)
 
-        print(f"before all_reduce on rank {dist.get_rank()}")
-        dist.all_reduce(loss, op=dist.ReduceOp.SUM)
-        print(f"after all_reduce on rank {dist.get_rank()}")
-
-        print(f"before loss backward on rank {dist.get_rank()}")
         loss.backward()
-        print(f"after loss backward on rank {dist.get_rank()}")
 
         if iter_num % config.training.accumulate == 0:
             optim.step()
