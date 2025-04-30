@@ -137,7 +137,7 @@ class Pascal3DPlus(Dataset):
             dtype=np.float32,
         )
         label = self.label_list[item]
-        padded_dimension = self.max_n - kp.shape[0]
+        padded_dimension = max(0, self.max_n - kp.shape[0])
         kp = np.pad(
             kp,
             pad_width=((0, padded_dimension), (0, 0)),

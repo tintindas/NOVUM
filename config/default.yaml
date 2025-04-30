@@ -56,23 +56,23 @@ model:
   adj_momentum: 0.9
   d_feature: 128
   local_size: 1
-  ckpt: "/home/upamanyu/m_project/NOVUM/results/siglip_loss_single_norm_classification_saved_model_20.pth" # TODO: change this 
+  ckpt: "/home/upamanyu/m_project/NOVUM/results/classification_saved_model_19.pth" # TODO: change this 
   down_sample_rate: 8
 
 training:
   local_size: 1
   d_feature: 128
-  batch_size: 8
+  batch_size: 4
   total_epochs: 20
   distance_thr: 48
   T: 0.07
   weight_noise: 0.005
   update_lr_epoch_n: 10
   update_lr_: 0.2
-  lr: 0.0001
+  lr: 0.00001
   momentum: 0.9
   accumulate: 10
-  weight_decay: 0.0001
+  weight_decay: 0.00001
   separate_bank: false
 
 inference:

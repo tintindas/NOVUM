@@ -1,4 +1,3 @@
-
 import numpy as np
 from lib.get_n_list import get_n_list
 import torch
@@ -9,6 +8,7 @@ from pathlib import Path
 from typing import Union
 import matplotlib.pyplot as plt
 import cv2
+
 torch.multiprocessing.set_sharing_strategy("file_system")
 import torch.utils.data
 import torchvision.transforms as trans
@@ -31,13 +31,15 @@ config = load_config(args, load_default_config=False, log_info=False)
 
 #####
 # PARAMS TO SET
-viz_path = "PATH/TO/VIZ"
+viz_path = "/home/upamanyu/m_project/NOVUM/viz/"
 occ_level = ""
 clutter_th = 0.65  # Threshold for clutter
 #####
 
 # Cuboid with gradient color texture (used for visualization)
-texture_color_bank = torch.load(Path(viz_path, "texture_bank.pth"), map_location="cuda:0")
+texture_color_bank = torch.load(
+    Path(viz_path, "texture_bank.pth"), map_location="cuda:0"
+)
 
 assert occ_level in config.dataset.occlusion_levels, "Invalid occ_level"
 
@@ -47,7 +49,10 @@ else:
     dataroot = str(Path(config.dataset.paths.root, config.dataset.paths.eval_ood))
 
 mesh_path_ref = str(Path(config.dataset.paths.root, config.dataset.paths.mesh))
-classification_size = (int(config.dataset.image_size[0]), int(config.dataset.image_size[1]))
+classification_size = (
+    int(config.dataset.image_size[0]),
+    int(config.dataset.image_size[1]),
+)
 
 net = NetE2E(
     net_type="resnetext",
@@ -67,6 +72,7 @@ incompatible_keys = net.load_state_dict(checkpoint["state"], strict=False)
 print("Keys not found:", incompatible_keys)
 # print net memory usage
 total_params = sum(p.numel() for p in net.parameters())
+print(f"Model has {total_params} params")
 print("Model loaded from " + config.model.ckpt)
 
 n_list_set = []
@@ -110,10 +116,10 @@ rasterizer = MeshRasterizer(cameras=cameras, raster_settings=raster_settings)
 #########################################################################
 with open(Path(viz_path, "file_list.txt"), "r") as f:
     file_list = f.readlines()
-file_list = [x.strip() for x in file_list]  
+file_list = [x.strip() for x in file_list]
 with open(Path(viz_path, "label_list.txt"), "r") as f:
     label_list = f.readlines()
-label_list = [int(x.strip()) for x in label_list]  
+label_list = [int(x.strip()) for x in label_list]
 Pascal3D_dataset = Pascal3DPlus(
     config=config.dataset,
     transforms=transforms,
@@ -141,6 +147,9 @@ for i, sample in enumerate(tqdm(Pascal3D_dataloader)):
         sample["label"],
     )
 
+    if img_label.item() >= len(config.dataset.classes):
+        continue
+
     obj_mask = sample["obj_mask"]
     index = sample["y_idx"]
 
@@ -154,7 +163,7 @@ for i, sample in enumerate(tqdm(Pascal3D_dataloader)):
     img_name = cls_name + "/" + sample["this_name"][0]
 
     features = net.module.forward_test(img)
-    
+
     compare_bank = checkpoint["memory"][0 : (len(config.dataset.classes) * max_n)]
     weighted_nocs = {}
     # get 2 random classes
@@ -162,28 +171,38 @@ for i, sample in enumerate(tqdm(Pascal3D_dataloader)):
     all_cls.remove(cls_name)
     cls_of_interest = [cls_name] + np.random.choice(all_cls, 2, replace=False).tolist()
     for current_cls in [config.dataset.classes.index(cls_) for cls_ in cls_of_interest]:
-        score_per_pixel = compare_bank[current_cls * max_n:(current_cls + 1) * max_n] @ features.reshape(
+        score_per_pixel = compare_bank[
+            current_cls * max_n : (current_cls + 1) * max_n
+        ] @ features.reshape(
             features.shape[1],
             -1,
         )
         score_per_pixel = score_per_pixel / 2 + 0.5
         scores_val, score_idx = torch.max(score_per_pixel, dim=0)
-        output_activation_nocs = torch.zeros(scores_val.shape[0], 3).to(texture_color_bank.device)
+        output_activation_nocs = torch.zeros(scores_val.shape[0], 3).to(
+            texture_color_bank.device
+        )
         score_idx_2d_map = score_idx.clone().detach()
         score_idx_2d_map[scores_val < clutter_th] = 0
         non_zero_idx_2d = score_idx_2d_map != 0
-        max_ = 1.
+        max_ = 1.0
         min_ = scores_val[non_zero_idx_2d].min()
-        score_val_norm = (scores_val[non_zero_idx_2d].unsqueeze(1) - min_ + 0.15) / (max_ - min_ + 0.15)
-        output_activation_nocs[non_zero_idx_2d] = texture_color_bank[current_cls * max_n + score_idx_2d_map[non_zero_idx_2d]] * score_val_norm
-        output_activation_nocs = output_activation_nocs.reshape(features.shape[2], features.shape[3], 3)        
+        score_val_norm = (scores_val[non_zero_idx_2d].unsqueeze(1) - min_ + 0.15) / (
+            max_ - min_ + 0.15
+        )
+        output_activation_nocs[non_zero_idx_2d] = (
+            texture_color_bank[current_cls * max_n + score_idx_2d_map[non_zero_idx_2d]]
+            * score_val_norm
+        )
+        output_activation_nocs = output_activation_nocs.reshape(
+            features.shape[2], features.shape[3], 3
+        )
 
         weighted_nocs[config.dataset.classes[current_cls]] = output_activation_nocs
-    img_to_plot = compute_weighted_correspondances(
-        weighted_nocs, img[0], img_name
-    )
+    img_to_plot = compute_weighted_correspondances(weighted_nocs, img[0], img_name)
     # save image
     img_to_save = Image.fromarray(img_to_plot)
-    path = Path(viz_path, "output", f"{img_name}.png")
+    experiment_name = config.model.ckpt.split("_saved_model")[0]
+    path = Path(viz_path, "outputs", f"{img_name}.png")
     path.parent.mkdir(parents=True, exist_ok=True)
     img_to_save.save(path)
