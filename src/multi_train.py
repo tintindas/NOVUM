@@ -226,7 +226,7 @@ for epoch in trange(config.training.total_epochs):
 
         # flatten and mask out invisible vertices
         B, K, D = image_feats.shape
-        flat_img_feats = image_feats.view(B * K, D)
+        flat_img_feats = image_feats.reshape(B * K, D)
         flat_mask = iskpvisible.view(-1)
         valid_mask = flat_mask.to(torch.float32)
 
