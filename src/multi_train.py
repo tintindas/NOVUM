@@ -81,6 +81,7 @@ transforms = transforms.Compose(
 
 mesh_path = mesh_path_set[0]
 max_n = max(n_list_set)
+feature_dim = int(max_n)
 fbank = FeatureBank(
     inputSize=config.training.d_feature,
     outputSize=len(config.dataset.classes) * max_n
@@ -217,12 +218,15 @@ for epoch in trange(config.training.total_epochs):
             img, keypoint_positions=keypoint
         )  # , obj_mask=1 - obj_mask)
 
+        image_feats = image_features[:, 0:feature_dim, :]
+        noise_feats = image_features[:, feature_dim:, :]
+
         bank_features = fbank.features
         # bank_features.to(device)
 
         # flatten and mask out invisible vertices
-        B, K, D = image_features.shape
-        flat_img_feats = image_features.view(B * K, D)
+        B, K, D = image_feats.shape
+        flat_img_feats = image_feats.view(B * K, D)
         flat_mask = iskpvisible.view(-1)
         valid_mask = flat_mask.to(torch.float32)
 
@@ -241,6 +245,8 @@ for epoch in trange(config.training.total_epochs):
         fbank.forward_siglip(image_features, index, iskpvisible_float, img_label)
 
         loss_main = loss.item()
+
+        noise_sim = noise_feats @ bank_features.T
 
         if config.model.num_noise > 0:
             loss_reg = torch.mean(noise_sim) * 0.1
