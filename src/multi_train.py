@@ -134,7 +134,7 @@ zeros = torch.zeros(
     dtype=torch.float32,
 ).to(device)
 
-experiment_name = "siglip_loss_single_2classes"
+experiment_name = args.experiment_name
 csv_file = f"{config.save_dir}/training_log_{experiment_name}.csv"
 
 

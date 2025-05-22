@@ -6,10 +6,18 @@ from ast import literal_eval
 import argparse
 import yaml
 
+
 def parse_args():
-    parser = argparse.ArgumentParser(description='NOVUM project')
-    parser.add_argument('--config', type=str, default='config/defaults.yaml')
+    parser = argparse.ArgumentParser(description="NOVUM project")
+    parser.add_argument("--config", type=str, default="config/defaults.yaml")
+    parser.add_argument(
+        "--experiment_name",
+        type=str,
+        default="default_experiment",
+        help="Name for the experiment",
+    )
     return parser.parse_args()
+
 
 def get_pkg_root():
     root = os.path.dirname(os.path.abspath(__file__))
@@ -154,7 +162,9 @@ class Configuration:
                 includes = [includes]
             if not isinstance(includes, list):
                 raise AttributeError(
-                    "Includes must be a list or a str, {} provided".format(type(includes))
+                    "Includes must be a list or a str, {} provided".format(
+                        type(includes)
+                    )
                 )
             include_mapping = {}
 
