@@ -219,7 +219,6 @@ for epoch in trange(config.training.total_epochs):
         )  # , obj_mask=1 - obj_mask)
 
         image_feats = image_features[:, 0:feature_dim, :]
-        noise_feats = image_features[:, feature_dim:, :]
 
         bank_features = fbank.features
         # bank_features.to(device)
@@ -246,9 +245,9 @@ for epoch in trange(config.training.total_epochs):
 
         loss_main = loss.item()
 
-        noise_sim = noise_feats @ bank_features.T
-
         if config.model.num_noise > 0:
+            noise_feats = image_features[:, feature_dim:, :]
+            noise_sim = noise_feats @ bank_features.T
             loss_reg = torch.mean(noise_sim) * 0.1
             # The loss of noise
             loss += loss_reg
