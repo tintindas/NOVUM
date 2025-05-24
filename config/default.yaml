@@ -63,7 +63,7 @@ training:
   local_size: 1
   d_feature: 128
   batch_size: 8
-  total_epochs: 20
+  total_epochs: 10
   distance_thr: 48
   T: 0.07
   weight_noise: 0.005
