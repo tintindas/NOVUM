@@ -93,12 +93,19 @@ class SigLipLoss(nn.Module):
             m_i = mask_image.to(logits.dtype).unsqueeze(1)  # [N,1]
             m_j = mask_bank.to(logits.dtype).unsqueeze(0)  # [1,N]
             pair_mask = m_i * m_j  # [N,N]
-            valid_pairs = pair_mask.sum().clamp_min(1.0)
-            loss = (loss_matrix * pair_mask).sum() / valid_pairs
+
+            pos_mask = eq_mask * pair_mask
+            neg_mask = (~eq_mask) * pair_mask
+
+            pos_loss = (loss_matrix * pos_mask).sum() / pos_mask.sum().clamp_min(1.0)
+            neg_loss = (loss_matrix * neg_mask).sum() / neg_mask.sum().clamp_min(1.0)
+
+            loss = pos_loss + neg_loss
+
         else:
             loss = loss_matrix.mean()
 
-        return loss
+        return loss / self.world_size
 
     def forward(
         self,
