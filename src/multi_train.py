@@ -135,7 +135,7 @@ zeros = torch.zeros(
     dtype=torch.float32,
 ).to(device)
 
-experiment_name = "siglip_loss_single_2classes"
+experiment_name = "siglip_sys_metrics"
 csv_file = f"{config.save_dir}/training_log_{experiment_name}.csv"
 sys_csv_file = f"{config.save_dir}/{experiment_name}_training_numbers.csv"
 
@@ -229,6 +229,9 @@ def save_checkpoint(state, filename):
 
 print("Start Training!")
 for epoch in trange(config.training.total_epochs):
+    if epoch >= 1:
+        break
+
     sampler.set_epoch(epoch)
     if (epoch - 1) % config.training.update_lr_epoch_n == 0:
         lr = config.training.lr * config.training.update_lr_
@@ -323,6 +326,8 @@ for epoch in trange(config.training.total_epochs):
             )
 
         iter_num += 1
+        if iter_num >= 2:
+            break
 
     if (epoch + 1) % 5 == 0:
         save_checkpoint(
