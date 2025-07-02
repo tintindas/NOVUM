@@ -267,6 +267,13 @@ for epoch in trange(config.training.total_epochs):
 
         iter_num += 1
 
+    # === Synchronize FeatureBank across all processes ===
+    with torch.no_grad():
+        if not fbank.memory.is_contiguous():
+            fbank.memory = fbank.memory.contiguous()
+        torch.distributed.all_reduce(fbank.memory, op=torch.distributed.ReduceOp.SUM)
+        fbank.memory /= torch.distributed.get_world_size()
+
     if (epoch + 1) % 5 == 0:
         save_checkpoint(
             {
