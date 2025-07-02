@@ -70,6 +70,7 @@ net = torch.nn.parallel.DistributedDataParallel(
     output_device=device.index,
     find_unused_parameters=False,
 )
+total_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
 
 
 transforms = transforms.Compose(
@@ -136,6 +137,7 @@ zeros = torch.zeros(
 
 experiment_name = args.experiment_name
 csv_file = f"{config.save_dir}/training_log_{experiment_name}.csv"
+sys_csv_file = f"{config.save_dir}/{experiment_name}_training_numbers.csv"
 
 
 def log_training_metrics(
@@ -184,6 +186,39 @@ def log_training_metrics(
             f"{loss_reg:.5f}",
         )
 
+def log_system_metrics(
+    iter_num,
+    epoch,
+    max_vram,
+    step_time_ms,
+    total_params,
+    csv_file="training_numbers.csv",
+):
+    file_exists = os.path.isfile(csv_file)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    row = [
+        timestamp,
+        iter_num,
+        epoch,
+        f"{max_vram:.2f}",
+        f"{step_time_ms:.2f}",
+        total_params,
+    ]
+
+    with open(csv_file, mode="a", newline="") as file:
+        writer = csv.writer(file)
+        if not file_exists:
+            writer.writerow(
+                [
+                    "timestamp",
+                    "n_iter",
+                    "epoch",
+                    "max_vram_MB",
+                    "step_time_ms",
+                    "total_params",
+                ]
+            )
+        writer.writerow(row)
 
 def save_checkpoint(state, filename):
     file = os.path.join(config.save_dir, filename)
@@ -254,17 +289,45 @@ for epoch in trange(config.training.total_epochs):
         else:
             loss_reg = torch.zeros(1)
 
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+        start_event.record() 
+
         loss.backward()
 
         if iter_num % config.training.accumulate == 0:
             optim.step()
             optim.zero_grad()
-            if rank == 0:
+
+        end_event.record()
+        torch.cuda.synchronize()
+
+        if rank == 0:
+            max_vram = torch.cuda.max_memory_allocated(device) / 1024**2  # MB
+            step_time_ms = start_event.elapsed_time(end_event)
+
+            if iter_num % config.training.accumulate == 0:
                 log_training_metrics(
                     iter_num, epoch, loss_main, loss_reg.item(), csv_file=csv_file
                 )
 
+            log_system_metrics(
+                iter_num,
+                epoch,
+                max_vram,
+                step_time_ms,
+                total_params,
+                csv_file=sys_csv_file,
+            )
+
         iter_num += 1
+
+     # === Synchronize FeatureBank across all processes ===
+    with torch.no_grad():
+        if not fbank.memory.is_contiguous():
+            fbank.memory = fbank.memory.contiguous()
+        torch.distributed.all_reduce(fbank.memory, op=torch.distributed.ReduceOp.SUM)
+        fbank.memory /= torch.distributed.get_world_size()
 
     if (epoch + 1) % 5 == 0:
         save_checkpoint(
