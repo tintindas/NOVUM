@@ -87,16 +87,7 @@ class SigLipLoss(nn.Module):
         eq_mask = image_ids.unsqueeze(1) == bank_ids.unsqueeze(0)  # [N, N]
         labels = torch.where(eq_mask, 1.0, -1.0).to(logits.device, logits.dtype)
 
-        loss_matrix = -F.logsigmoid(labels * logits)
-
-        if mask_image is not None and mask_bank is not None:
-            m_i = mask_image.to(logits.dtype).unsqueeze(1)  # [N,1]
-            m_j = mask_bank.to(logits.dtype).unsqueeze(0)  # [1,N]
-            pair_mask = m_i * m_j  # [N,N]
-            valid_pairs = pair_mask.sum().clamp_min(1.0)
-            loss = (loss_matrix * pair_mask).sum() / valid_pairs
-        else:
-            loss = loss_matrix.mean()
+        loss = -F.logsigmoid(labels * logits).sum() / (N * N)
 
         return loss
 

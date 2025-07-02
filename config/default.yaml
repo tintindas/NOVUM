@@ -26,8 +26,8 @@ dataset:
   classes:
     - "aeroplane"
     - "bicycle"
-    # - "boat"
-    # - "bottle"
+    - "boat"
+    - "bottle"
     # - "bus"
     # - "car"
     # - "chair"
@@ -62,7 +62,7 @@ model:
 training:
   local_size: 1
   d_feature: 128
-  batch_size: 4
+  batch_size: 6
   total_epochs: 20
   distance_thr: 48
   T: 0.07

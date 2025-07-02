@@ -70,6 +70,7 @@ net = torch.nn.parallel.DistributedDataParallel(
     output_device=device.index,
     find_unused_parameters=False,
 )
+total_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
 
 
 transforms = transforms.Compose(
@@ -134,8 +135,9 @@ zeros = torch.zeros(
     dtype=torch.float32,
 ).to(device)
 
-experiment_name = "siglip_loss_single_2classes"
+experiment_name = "siglip_sys_metrics"
 csv_file = f"{config.save_dir}/training_log_{experiment_name}.csv"
+sys_csv_file = f"{config.save_dir}/{experiment_name}_training_numbers.csv"
 
 
 def log_training_metrics(
@@ -185,6 +187,41 @@ def log_training_metrics(
         )
 
 
+def log_system_metrics(
+    iter_num,
+    epoch,
+    max_vram,
+    step_time_ms,
+    total_params,
+    csv_file="training_numbers.csv",
+):
+    file_exists = os.path.isfile(csv_file)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    row = [
+        timestamp,
+        iter_num,
+        epoch,
+        f"{max_vram:.2f}",
+        f"{step_time_ms:.2f}",
+        total_params,
+    ]
+
+    with open(csv_file, mode="a", newline="") as file:
+        writer = csv.writer(file)
+        if not file_exists:
+            writer.writerow(
+                [
+                    "timestamp",
+                    "n_iter",
+                    "epoch",
+                    "max_vram_MB",
+                    "step_time_ms",
+                    "total_params",
+                ]
+            )
+        writer.writerow(row)
+
+
 def save_checkpoint(state, filename):
     file = os.path.join(config.save_dir, filename)
     torch.save(state, file)
@@ -192,6 +229,9 @@ def save_checkpoint(state, filename):
 
 print("Start Training!")
 for epoch in trange(config.training.total_epochs):
+    if epoch >= 1:
+        break
+
     sampler.set_epoch(epoch)
     if (epoch - 1) % config.training.update_lr_epoch_n == 0:
         lr = config.training.lr * config.training.update_lr_
@@ -204,8 +244,8 @@ for epoch in trange(config.training.total_epochs):
         keypoint = sample["kp"].to(device)
         iskpvisible = sample["iskpvisible"].to(device)
         img_label = sample["label"].to(device)
-        # index = sample["y_idx"].to(device)
-        index = sample["y_idx"]
+        index = sample["y_idx"].to(device)
+        # index = sample["y_idx"]
         # obj_mask = sample["obj_mask"]
 
         iskpvisible_float = iskpvisible
@@ -222,7 +262,7 @@ for epoch in trange(config.training.total_epochs):
         noise_feats = image_features[:, feature_dim:, :]
 
         bank_features = fbank.features
-        # bank_features.to(device)
+        bank_features.to(device)
 
         # flatten and mask out invisible vertices
         B, K, D = image_feats.shape
@@ -255,17 +295,39 @@ for epoch in trange(config.training.total_epochs):
         else:
             loss_reg = torch.zeros(1)
 
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+        start_event.record()
+
         loss.backward()
 
         if iter_num % config.training.accumulate == 0:
             optim.step()
             optim.zero_grad()
-            if rank == 0:
-                log_training_metrics(
-                    iter_num, epoch, loss_main, loss_reg.item(), csv_file=csv_file
-                )
+
+        end_event.record()
+        torch.cuda.synchronize()
+
+        if rank == 0:
+            max_vram = torch.cuda.max_memory_allocated(device) / 1024**2  # MB
+            step_time_ms = start_event.elapsed_time(end_event)
+
+            log_training_metrics(
+                iter_num, epoch, loss_main, loss_reg.item(), csv_file=csv_file
+            )
+
+            log_system_metrics(
+                iter_num,
+                epoch,
+                max_vram,
+                step_time_ms,
+                total_params,
+                csv_file=sys_csv_file,
+            )
 
         iter_num += 1
+        if iter_num >= 2:
+            break
 
     # === Synchronize FeatureBank across all processes ===
     with torch.no_grad():
