@@ -239,8 +239,8 @@ for epoch in trange(config.training.total_epochs):
         keypoint = sample["kp"].to(device)
         iskpvisible = sample["iskpvisible"].to(device)
         img_label = sample["label"].to(device)
-        # index = sample["y_idx"].to(device)
-        index = sample["y_idx"]
+        index = sample["y_idx"].to(device)
+        # index = sample["y_idx"]
         # obj_mask = sample["obj_mask"]
 
         iskpvisible_float = iskpvisible
@@ -256,7 +256,7 @@ for epoch in trange(config.training.total_epochs):
         image_feats = image_features[:, 0:feature_dim, :]
 
         bank_features = fbank.features
-        # bank_features.to(device)
+        bank_features.to(device)
 
         # flatten and mask out invisible vertices
         B, K, D = image_feats.shape
