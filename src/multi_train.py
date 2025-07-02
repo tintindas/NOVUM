@@ -229,8 +229,6 @@ def save_checkpoint(state, filename):
 
 print("Start Training!")
 for epoch in trange(config.training.total_epochs):
-    if epoch >= 1:
-        break
 
     sampler.set_epoch(epoch)
     if (epoch - 1) % config.training.update_lr_epoch_n == 0:
@@ -326,8 +324,6 @@ for epoch in trange(config.training.total_epochs):
             )
 
         iter_num += 1
-        if iter_num >= 2:
-            break
 
     # === Synchronize FeatureBank across all processes ===
     with torch.no_grad():
